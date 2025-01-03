@@ -274,6 +274,19 @@ def get_target_modules(model, lora_type, language_model):
     return list(target_modules)
 
 
+def initialize_weights(module):
+    """
+    自定义初始化函数
+    Args:
+        module (nn.Module): 模块（如 Linear 层）进行初始化
+    """
+    if isinstance(module, torch.nn.Linear):
+        nn.init.xavier_uniform_(module.weight)  # Xavier 均匀初始化权重
+        # nn.init.constant_(module.weight, 1.0)  # 权重初始化为 1
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0.0001)         # 偏置初始化为 0.0001
+
+
 class MultimodalDataset(Dataset):
 
     def __init__(self, tokenizer, model_args, data_args, training_args):
@@ -282,17 +295,20 @@ class MultimodalDataset(Dataset):
         raw_annos = nncore.load(data_args.anno_path)
 
         annos = []
+        idx = 0
         for anno in raw_annos:
-            num_words = len(anno['conversations'][1]['value'].split(' '))
-            if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
-                continue
-            if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
-                continue
-            if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
-                continue
-            if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
-                continue
-            annos.append(anno)
+            if idx < 20:
+                num_words = len(anno['conversations'][1]['value'].split(' '))
+                if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
+                    continue
+                if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
+                    continue
+                if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
+                    continue
+                if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
+                    continue
+                annos.append(anno)
+                idx = idx + 1
 
         if training_args.local_rank in (0, -1):
             ratio = round(len(annos) / len(raw_annos) * 100, 2)
@@ -428,6 +444,10 @@ def train():
     model.generation_config.top_p = None
     model.generation_config.top_k = None
 
+    model.clip_lora_mlp.apply(initialize_weights)
+    for param in model.clip_lora_mlp.parameters():
+        print(param)
+
     if training_args.lora_enable:
         assert training_args.tuning_mode != 'llm'
         target_modules = get_target_modules(model, training_args.lora_type, config.language_model)
@@ -440,6 +460,10 @@ def train():
             bias=training_args.lora_bias,
             target_modules=target_modules)
         model = get_peft_model(model, lora_config)
+
+        for param in model.clip_lora_mlp.parameters():
+            param.requires_grad = True
+            print(param)
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
@@ -510,6 +534,9 @@ def train():
 
     has_ckpt = bool(nncore.find(training_args.output_dir, 'checkpoint-*'))
     trainer.train(resume_from_checkpoint=has_ckpt)
+    
+    for param in trainer.model.clip_lora_mlp.parameters():
+        print(param)
 
     trainer.save_state()
     trainer.gather_and_save_model()

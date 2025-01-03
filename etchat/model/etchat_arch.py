@@ -13,6 +13,8 @@ from etchat.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX
 from .qformer import BertConfig, BertLMHeadModel
 from .vision_encoder.builder import build_vision_tower
 
+from transformers import CLIPProcessor, CLIPModel
+
 
 def _get_w(weight, key):
     return {k.split(key + '.')[1]: v for k, v in weight.items() if key in k}
@@ -21,6 +23,39 @@ def _get_w(weight, key):
 def _cache_state(module, args):
     assert isinstance(args, tuple) and len(args) == 1, args
     module.cache_state = args[0]
+
+
+class VisionAlignMLP(nn.Module):
+    def __init__(self, input_dim=1024, output_dim=1408, hidden_dim=768):
+        """
+        定义一个支持三维输入的 MLP，将最后一个维度从 1024 投射到 1408。
+        Args:
+            input_dim (int): 输入的最后一个维度
+            output_dim (int): 输出的最后一个维度
+            hidden_dim (int): 隐藏层维度（可选）
+        """
+        super(VisionAlignMLP, self).__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),  # 输入层到隐藏层
+            nn.ReLU(),                         # 激活函数
+            nn.Linear(hidden_dim, output_dim)  # 隐藏层到输出层
+        )
+    
+    def forward(self, x):
+        """
+        前向传播，将三维张量的最后一个维度通过 MLP 投射。
+        Args:
+            x (torch.Tensor): 输入张量，形状为 (batch_size, seq_len, input_dim)
+        Returns:
+            torch.Tensor: 输出张量，形状为 (batch_size, seq_len, output_dim)
+        """
+        # 调整输入形状以适配 MLP
+        batch_size, seq_len, input_dim = x.shape
+        x = x.view(-1, input_dim)  # 展平为二维张量 (batch_size * seq_len, input_dim)
+        x = self.mlp(x)            # MLP 投射
+        x = x.view(batch_size, seq_len, -1)  # 恢复三维张量
+        return x
+
 
 
 class ETChatMetaModel:
@@ -101,23 +136,48 @@ class ETChatMetaForCausalLM:
             self.vid_head = nn.Sequential(
                 nn.LayerNorm(hidden_size), nn.Linear(hidden_size, hidden_size // 2), nn.GELU(),
                 nn.Linear(hidden_size // 2, hidden_size))
+            self.clip_model = CLIPModel.from_pretrained('huggingface/openai/clip-vit-large-patch14').to_empty(device='cuda')
+            self.clip_lora_mlp = VisionAlignMLP(input_dim=1024, output_dim=1408, hidden_dim=768).to_empty(device='cuda')
         super(ETChatMetaForCausalLM, self).post_init()
 
     def load_pretrained_weights(self):
         self.model.load_weights()
 
     def encode_image(self, image, **kwargs):
+        # print('shape of input image:', image.shape)
+
+        clip_output = self.clip_model(input_ids=torch.tensor([[1,1],[1,1]]).to(image.device), pixel_values=image, output_hidden_states=True)
+        clip_hidden_states = clip_output.vision_model_output
+        # print('clip_hidden_states:', clip_hidden_states)
+        # print('#layer of clip_hidden_states:', len(clip_hidden_states.hidden_states))
+
+        deep_aligned_clip_hidden_states = self.clip_lora_mlp(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
+        # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
+
+        middle_aligned_clip_hidden_states = self.clip_lora_mlp(clip_hidden_states.hidden_states[12])[:,1:,:].squeeze(0)
+        # print('shape of middle aligned_clip_hidden_states:', middle_aligned_clip_hidden_states.shape)
+
         img_embed = self.model.vision_tower(image)
+        # print('shape of img_embed:', img_embed.shape)
 
         if self.config.vision_output_token == 'patch':
             img_embed = img_embed[:, 1:]
         elif self.config.vision_output_token == 'cls':
             img_embed = img_embed[:, :1]
+        # print('shape of img_embed after token selection:', img_embed.shape)
+
+        # print('img_embed:', img_embed)
+        # print('aligned_clip_hidden_states:', aligned_clip_hidden_states)
+
+        img_embed = img_embed*0.8 + deep_aligned_clip_hidden_states*0.1 + middle_aligned_clip_hidden_states*0.1
+        # img_embed = torch.cat((img_embed, aligned_clip_hidden_states), dim=0)
+        # print('shape of fused img_embed:', img_embed.shape)
 
         if self.config.mm_projector == 'qformer':
             img_embed = self.compress_image_qformer(img_embed, **kwargs)
         else:
             img_embed = self.compress_image_pooling(img_embed, **kwargs)
+        # print('shape of img_embed after qformer:', img_embed[0].shape)
 
         return img_embed
 
