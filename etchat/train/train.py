@@ -297,18 +297,18 @@ class MultimodalDataset(Dataset):
         annos = []
         idx = 0
         for anno in raw_annos:
-            if idx < 20:
-                num_words = len(anno['conversations'][1]['value'].split(' '))
-                if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
-                    continue
-                if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
-                    continue
-                if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
-                    continue
-                if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
-                    continue
-                annos.append(anno)
-                idx = idx + 1
+            # if idx < 20:
+            num_words = len(anno['conversations'][1]['value'].split(' '))
+            if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
+                continue
+            if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
+                continue
+            if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
+                continue
+            if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
+                continue
+            annos.append(anno)
+            # idx = idx + 1
 
         if training_args.local_rank in (0, -1):
             ratio = round(len(annos) / len(raw_annos) * 100, 2)
