@@ -444,8 +444,8 @@ def train():
     model.generation_config.top_p = None
     model.generation_config.top_k = None
 
-    model.clip_lora_mlp.apply(initialize_weights)
-    for param in model.clip_lora_mlp.parameters():
+    model.clip_eva_lora_mlp.apply(initialize_weights)
+    for param in model.clip_eva_lora_mlp.parameters():
         print(param)
 
     if training_args.lora_enable:
@@ -461,7 +461,7 @@ def train():
             target_modules=target_modules)
         model = get_peft_model(model, lora_config)
 
-        for param in model.clip_lora_mlp.parameters():
+        for param in model.clip_eva_lora_mlp.parameters():
             param.requires_grad = True
             print(param)
 
@@ -535,7 +535,7 @@ def train():
     has_ckpt = bool(nncore.find(training_args.output_dir, 'checkpoint-*'))
     trainer.train(resume_from_checkpoint=has_ckpt)
     
-    for param in trainer.model.clip_lora_mlp.parameters():
+    for param in trainer.model.clip_eva_lora_mlp.parameters():
         print(param)
 
     trainer.save_state()

@@ -37,7 +37,7 @@ class VisionAlignMLP(nn.Module):
         super(VisionAlignMLP, self).__init__()
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),  # 输入层到隐藏层
-            nn.ReLU(),                         # 激活函数
+            nn.GELU(),                         # 激活函数
             nn.Linear(hidden_dim, output_dim)  # 隐藏层到输出层
         )
     
@@ -55,6 +55,29 @@ class VisionAlignMLP(nn.Module):
         x = self.mlp(x)            # MLP 投射
         x = x.view(batch_size, seq_len, -1)  # 恢复三维张量
         return x
+    
+
+
+def dense_connector_dci(image_forward_outs):
+    image_features_1 = []
+    image_features_2 = []
+    
+    # print("shape of hidden_states[0]", image_forward_outs.hidden_states[0].shape)
+
+    for i in range(0, 12):
+        image_features_1.append(image_forward_outs.hidden_states[i][:, 1:, :])
+    image_features_1 = torch.stack(image_features_1, dim=0)
+    image_features_1 = torch.sum(image_features_1, dim=0) / 12
+    # print("shape of image_features_1:", image_features_1.shape)
+
+    for i in range(12, 24):
+        image_features_2.append(image_forward_outs.hidden_states[i][:, 1:, :])
+    image_features_2 = torch.stack(image_features_2, dim=0)
+    image_features_2 = torch.sum(image_features_2, dim=0) / 12
+
+    image_features_3 = image_forward_outs.hidden_states[24][:, 1:, :]
+    
+    return torch.cat([image_features_1, image_features_2, image_features_3], dim=-1)
 
 
 
@@ -136,8 +159,8 @@ class ETChatMetaForCausalLM:
             self.vid_head = nn.Sequential(
                 nn.LayerNorm(hidden_size), nn.Linear(hidden_size, hidden_size // 2), nn.GELU(),
                 nn.Linear(hidden_size // 2, hidden_size))
-            self.clip_model = CLIPModel.from_pretrained('huggingface/openai/clip-vit-large-patch14').to_empty(device='cuda')
-            self.clip_lora_mlp = VisionAlignMLP(input_dim=1024, output_dim=1408, hidden_dim=768).to_empty(device='cuda')
+            self.clip_model = CLIPModel.from_pretrained('openai/clip-vit-large-patch14').to_empty(device='cuda')
+            self.clip_eva_lora_mlp = VisionAlignMLP(input_dim=4480, output_dim=1408, hidden_dim=1408).to_empty(device='cuda')
         super(ETChatMetaForCausalLM, self).post_init()
 
     def load_pretrained_weights(self):
@@ -151,11 +174,19 @@ class ETChatMetaForCausalLM:
         # print('clip_hidden_states:', clip_hidden_states)
         # print('#layer of clip_hidden_states:', len(clip_hidden_states.hidden_states))
 
-        deep_aligned_clip_hidden_states = self.clip_lora_mlp(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
-        # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
 
-        middle_aligned_clip_hidden_states = self.clip_lora_mlp(clip_hidden_states.hidden_states[12])[:,1:,:].squeeze(0)
-        # print('shape of middle aligned_clip_hidden_states:', middle_aligned_clip_hidden_states.shape)
+        # ### Extract specific layer of CLIP hidden states
+        # deep_aligned_clip_hidden_states = self.clip_eva_lora_mlp(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
+        # # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
+
+        # middle_aligned_clip_hidden_states = self.clip_eva_lora_mlp(clip_hidden_states.hidden_states[12])[:,1:,:].squeeze(0)
+        # # print('shape of middle aligned_clip_hidden_states:', middle_aligned_clip_hidden_states.shape)
+
+        ### Extract DC layers of CLIP hidden states
+        # last_clip_hidden_states = self.clip_eva_lora_mlp(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
+
+        deep_aligned_clip_hidden_states = dense_connector_dci(clip_hidden_states)
+        # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
 
         img_embed = self.model.vision_tower(image)
         # print('shape of img_embed:', img_embed.shape)
@@ -169,9 +200,14 @@ class ETChatMetaForCausalLM:
         # print('img_embed:', img_embed)
         # print('aligned_clip_hidden_states:', aligned_clip_hidden_states)
 
-        img_embed = img_embed*0.8 + deep_aligned_clip_hidden_states*0.1 + middle_aligned_clip_hidden_states*0.1
+        ### Fuse image features with CLIP hidden states
+        # img_embed = img_embed*0.8 + deep_aligned_clip_hidden_states*0.1 + middle_aligned_clip_hidden_states*0.1
         # img_embed = torch.cat((img_embed, aligned_clip_hidden_states), dim=0)
+        img_embed = torch.cat([img_embed, deep_aligned_clip_hidden_states], dim=-1)
         # print('shape of fused img_embed:', img_embed.shape)
+
+        img_embed = self.clip_eva_lora_mlp(img_embed)
+        # print('shape of img_embed after mlp:', img_embed.shape)
 
         if self.config.mm_projector == 'qformer':
             img_embed = self.compress_image_qformer(img_embed, **kwargs)

@@ -1,12 +1,11 @@
 #!/bin/bash
 
 set -e
-
-stage2_path=${1:-"/home/zixuan/projects/ETBench/huggingface/PolyU-ChenLab/ETChat-Phi3-Mini-Stage-3"}
+stage2_path=${1:-"/home/han023/project/ETBench/Modified/save_model/etchat-stage-3"}
 # stage2_path=${1:-"./save_model/etchat-stage-3-mlp"}
-stage3_path="./save_model/etchat-stage-3-mlp-2"
+stage3_path="./save_model/etchat-stage-3-mlp-dc"
 
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=0,1
 export PYTHONPATH="./:$PYTHONPATH"
 
 torchrun --nproc_per_node 2 etchat/train/train.py \
@@ -20,8 +19,8 @@ torchrun --nproc_per_node 2 etchat/train/train.py \
     --vision_output_layer -2 \
     --vision_output_token patch \
     --mm_projector qformer \
-    --anno_path /home/zixuan/projects/ETBench/huggingface/PolyU-ChenLab/ET-Instruct-164K/et_instruct_164k_vid.json \
-    --video_path /home/zixuan/projects/ETBench/huggingface/PolyU-ChenLab/ET-Instruct-164K/videos \
+    --anno_path /home/han023/project/ETBench/Modified/huggingface/PolyU-ChenLab/ET-Instruct-164K/et_instruct_164k_vid.json \
+    --video_path /home/han023/project/ETBench/Modified/huggingface/PolyU-ChenLab/ET-Instruct-164K/videos \
     --fps 1 \
     --lora_enable True \
     --lora_lr 5e-5 \

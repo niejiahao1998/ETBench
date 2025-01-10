@@ -9,3 +9,6 @@ __pycache__/
 /work_dirs
 .DS_Store
 ._*
+
+/huggingface
+/save_model
