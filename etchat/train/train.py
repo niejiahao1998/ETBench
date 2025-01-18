@@ -297,18 +297,18 @@ class MultimodalDataset(Dataset):
         annos = []
         idx = 0
         for anno in raw_annos:
-            # if idx < 20:
-            num_words = len(anno['conversations'][1]['value'].split(' '))
-            if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
-                continue
-            if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
-                continue
-            if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
-                continue
-            if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
-                continue
-            annos.append(anno)
-            # idx = idx + 1
+            if idx < 5000:
+                num_words = len(anno['conversations'][1]['value'].split(' '))
+                if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
+                    continue
+                if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
+                    continue
+                if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
+                    continue
+                if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
+                    continue
+                annos.append(anno)
+                idx = idx + 1
 
         if training_args.local_rank in (0, -1):
             ratio = round(len(annos) / len(raw_annos) * 100, 2)
@@ -444,8 +444,9 @@ def train():
     model.generation_config.top_p = None
     model.generation_config.top_k = None
 
-    model.clip_eva_lora_mlp.apply(initialize_weights)
-    for param in model.clip_eva_lora_mlp.parameters():
+    if training_args.tuning_mode == 'projector':
+        model.clip_eva_projector.apply(initialize_weights)
+    for param in model.clip_eva_projector.parameters():
         print(param)
 
     if training_args.lora_enable:
@@ -461,9 +462,9 @@ def train():
             target_modules=target_modules)
         model = get_peft_model(model, lora_config)
 
-        for param in model.clip_eva_lora_mlp.parameters():
-            param.requires_grad = True
-            print(param)
+    for param in model.clip_eva_projector.parameters():
+        param.requires_grad = True
+        print(param)
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
@@ -535,7 +536,7 @@ def train():
     has_ckpt = bool(nncore.find(training_args.output_dir, 'checkpoint-*'))
     trainer.train(resume_from_checkpoint=has_ckpt)
     
-    for param in trainer.model.clip_eva_lora_mlp.parameters():
+    for param in trainer.model.clip_eva_projector.parameters():
         print(param)
 
     trainer.save_state()
