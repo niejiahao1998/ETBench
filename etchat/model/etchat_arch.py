@@ -13,8 +13,6 @@ from etchat.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX
 from .qformer import BertConfig, BertLMHeadModel
 from .vision_encoder.builder import build_vision_tower
 
-from transformers import CLIPProcessor, CLIPModel
-
 
 def _get_w(weight, key):
     return {k.split(key + '.')[1]: v for k, v in weight.items() if key in k}
@@ -22,63 +20,8 @@ def _get_w(weight, key):
 
 def _cache_state(module, args):
     assert isinstance(args, tuple) and len(args) == 1, args
+    # print(args[0].shape)
     module.cache_state = args[0]
-
-
-class VisionAlignMLP(nn.Module):
-    def __init__(self, input_dim=1024, output_dim=1408, hidden_dim=768):
-        """
-        定义一个支持三维输入的 MLP，将最后一个维度从 1024 投射到 1408。
-        Args:
-            input_dim (int): 输入的最后一个维度
-            output_dim (int): 输出的最后一个维度
-            hidden_dim (int): 隐藏层维度（可选）
-        """
-        super(VisionAlignMLP, self).__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),  # 输入层到隐藏层
-            nn.GELU(),                         # 激活函数
-            nn.Linear(hidden_dim, output_dim)  # 隐藏层到输出层
-        )
-    
-    def forward(self, x):
-        """
-        前向传播，将三维张量的最后一个维度通过 MLP 投射。
-        Args:
-            x (torch.Tensor): 输入张量，形状为 (batch_size, seq_len, input_dim)
-        Returns:
-            torch.Tensor: 输出张量，形状为 (batch_size, seq_len, output_dim)
-        """
-        # 调整输入形状以适配 MLP
-        batch_size, seq_len, input_dim = x.shape
-        x = x.view(-1, input_dim)  # 展平为二维张量 (batch_size * seq_len, input_dim)
-        x = self.mlp(x)            # MLP 投射
-        x = x.view(batch_size, seq_len, -1)  # 恢复三维张量
-        return x
-    
-
-
-def dense_connector_dci(image_forward_outs):
-    image_features_1 = []
-    image_features_2 = []
-    
-    # print("shape of hidden_states[0]", image_forward_outs.hidden_states[0].shape)
-
-    for i in range(0, 12):
-        image_features_1.append(image_forward_outs.hidden_states[i][:, 1:, :])
-    image_features_1 = torch.stack(image_features_1, dim=0)
-    image_features_1 = torch.sum(image_features_1, dim=0) / 12
-    # print("shape of image_features_1:", image_features_1.shape)
-
-    for i in range(12, 24):
-        image_features_2.append(image_forward_outs.hidden_states[i][:, 1:, :])
-    image_features_2 = torch.stack(image_features_2, dim=0)
-    image_features_2 = torch.sum(image_features_2, dim=0) / 12
-
-    image_features_3 = image_forward_outs.hidden_states[24][:, 1:, :]
-    
-    return torch.cat([image_features_1, image_features_2, image_features_3], dim=-1)
-
 
 
 class ETChatMetaModel:
@@ -159,61 +102,23 @@ class ETChatMetaForCausalLM:
             self.vid_head = nn.Sequential(
                 nn.LayerNorm(hidden_size), nn.Linear(hidden_size, hidden_size // 2), nn.GELU(),
                 nn.Linear(hidden_size // 2, hidden_size))
-        self.clip_model = CLIPModel.from_pretrained('openai/clip-vit-large-patch14').to_empty(device='cuda')
-        self.clip_eva_projector = VisionAlignMLP(input_dim=4480, output_dim=1408, hidden_dim=1408).to_empty(device='cuda')
         super(ETChatMetaForCausalLM, self).post_init()
 
     def load_pretrained_weights(self):
         self.model.load_weights()
 
     def encode_image(self, image, **kwargs):
-        # print('shape of input image:', image.shape)
-
-        clip_output = self.clip_model(input_ids=torch.tensor([[1,1],[1,1]]).to(image.device), pixel_values=image, output_hidden_states=True)
-        clip_hidden_states = clip_output.vision_model_output
-        # print('clip_hidden_states:', clip_hidden_states)
-        # print('#layer of clip_hidden_states:', len(clip_hidden_states.hidden_states))
-
-
-        # ### Extract specific layer of CLIP hidden states
-        # deep_aligned_clip_hidden_states = self.clip_eva_lora_mm_projector(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
-        # # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
-
-        # middle_aligned_clip_hidden_states = self.clip_eva_lora_mm_projector(clip_hidden_states.hidden_states[12])[:,1:,:].squeeze(0)
-        # # print('shape of middle aligned_clip_hidden_states:', middle_aligned_clip_hidden_states.shape)
-
-        ### Extract DC layers of CLIP hidden states
-        # last_clip_hidden_states = self.clip_eva_lora_mm_projector(clip_hidden_states.hidden_states[-2])[:,1:,:].squeeze(0)
-
-        deep_aligned_clip_hidden_states = dense_connector_dci(clip_hidden_states)
-        # print('shape of deep aligned_clip_hidden_states:', deep_aligned_clip_hidden_states.shape)
-
         img_embed = self.model.vision_tower(image)
-        # print('shape of img_embed:', img_embed.shape)
 
         if self.config.vision_output_token == 'patch':
             img_embed = img_embed[:, 1:]
         elif self.config.vision_output_token == 'cls':
             img_embed = img_embed[:, :1]
-        # print('shape of img_embed after token selection:', img_embed.shape)
-
-        # print('img_embed:', img_embed)
-        # print('aligned_clip_hidden_states:', aligned_clip_hidden_states)
-
-        ### Fuse image features with CLIP hidden states
-        # img_embed = img_embed*0.8 + deep_aligned_clip_hidden_states*0.1 + middle_aligned_clip_hidden_states*0.1
-        # img_embed = torch.cat((img_embed, aligned_clip_hidden_states), dim=0)
-        img_embed = torch.cat([img_embed, deep_aligned_clip_hidden_states], dim=-1)
-        # print('shape of fused img_embed:', img_embed.shape)
-
-        img_embed = self.clip_eva_projector(img_embed)
-        # print('shape of img_embed after mlp:', img_embed.shape)
 
         if self.config.mm_projector == 'qformer':
             img_embed = self.compress_image_qformer(img_embed, **kwargs)
         else:
             img_embed = self.compress_image_pooling(img_embed, **kwargs)
-        # print('shape of img_embed after qformer:', img_embed[0].shape)
 
         return img_embed
 
@@ -498,8 +403,39 @@ class ETChatMetaForCausalLM:
 
         if self.config.use_matching and image is not None:
             # decoder block -> -2 -> decoder block -> cache state -> norm -> -1
-            frm_tokens_all = self.frm_head(self.model.norm.cache_state)
+            ### layer 1-16
+            shallow_hidden_states = []
+            for i in range(1,17):
+                shallow_hidden_states.append(outputs.hidden_states[i])
+            shallow_hidden_states = torch.stack(shallow_hidden_states, dim=0)
+            shallow_hidden_states = torch.sum( shallow_hidden_states, dim=0) / 16
+            print("shape of shallow_hidden_states:", shallow_hidden_states.shape)
+
+            ### layer 16-32
+            deep_hidden_states = []
+            ### layer 16-31
+            for i in range(17, 32):
+                deep_hidden_states.append(outputs.hidden_states[i])
+            deep_hidden_states.append(self.model.norm.cache_state)
+            ### layer 32
+            deep_hidden_states = torch.stack(deep_hidden_states, dim=0)
+            deep_hidden_states = torch.sum( deep_hidden_states, dim=0) / 16
+            # print("shape of deep_hidden_states:", deep_hidden_states.shape)
+
+            hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
+            # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
+        
+            frm_tokens_all = self.frm_head(hier_frm_tokens_all)
+            # print("shape of frm_tokens_all:", frm_tokens_all.shape)
+            # print("shape of self.model.norm.cache_state", self.model.norm.cache_state.shape)
             vid_tokens_all = self.vid_head(outputs.hidden_states[-2])
+            # print("length of outputs.hidden_states:", len(outputs.hidden_states))
+            # print("shape of outputs.hidden_states[-2]:", outputs.hidden_states[-2].shape)
+            # print(self.model.norm.cache_state == outputs.hidden_states[-1])
+            # print("self.norm.cache_state:", self.frm_post_layernorm(self.model.norm.cache_state))
+            # print("outputs.hidden_states[-1]:", outputs.hidden_states[-1])
+            # print(self.model.norm(self.model.norm.cache_state) == outputs.hidden_states[-1])
+            # print("shape of vid_tokens_all:", vid_tokens_all.shape)
 
             if mode != 'training':
                 if mode == 'caching':
@@ -515,6 +451,8 @@ class ETChatMetaForCausalLM:
                 self.tgt.append(tgt)
 
             if labels is not None and tgt is not None:
+                # print("tgt:", tgt)
+                # print("shape of tgt:", len(tgt[0]))
                 loss_match, avg_factor = 0, 0
                 shift_labels = labels[..., 1:].contiguous()
                 assert len(self.model.img_token_pos) == len(tgt)
@@ -529,12 +467,21 @@ class ETChatMetaForCausalLM:
                     tgt_idx[tgt_idx > max_idx] = max_idx
 
                     frm_tokens = frm_tokens_all[i, sep[0]:sep[1]]
+                    # print("shape of frm_tokens:", frm_tokens.shape)
                     idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
                     sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
+                    # print(sim_tgt.tolist())
+                    # print("shape of sim_tgt:", sim_tgt.shape)
+                    for sim_tgt_i in sim_tgt.tolist():
+                        indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
+                        # print(indices)
 
                     inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
                     vid_tokens = vid_tokens_all[i][inds]
+                    # print("shape of vid_tokens:", vid_tokens.shape)
                     sim = torch.matmul(vid_tokens, frm_tokens.t()) / vid_tokens.size(1)**0.5
+                    # print(sim)
+                    # print("shape of sim:", sim.shape)
 
                     loss_match = loss_match + F.cross_entropy(sim, sim_tgt)
                     avg_factor += 1

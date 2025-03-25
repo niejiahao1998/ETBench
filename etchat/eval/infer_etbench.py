@@ -47,8 +47,6 @@ if __name__ == '__main__':
     anno = [anno[i::args.chunk] for i in range(args.chunk)][args.index]
 
     model, tokenizer, transform = build_model(args.model_path, device=args.device)
-    for param in model.clip_eva_lora_mlp.parameters():
-        print(param)
 
     for i in nncore.ProgressBar(range(len(anno))):
         sample = copy.deepcopy(anno[i])

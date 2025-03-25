@@ -1,14 +1,21 @@
 #!/bin/bash
+### PLS MODIFY THE PATHS BELOW ###
+# stage2_path
+# stage3_path
+# anno_path
+# video_path
+
+export NCCL_P2P_DISABLE=1
 
 set -e
-stage2_path=${1:-"/home/han023/project/ETBench/Modified/save_model/etchat-stage-3"}
-# stage2_path=${1:-"./save_model/etchat-stage-3-mlp"}
-stage3_path="./save_model/etchat-stage-3-mlp-dc"
 
-export CUDA_VISIBLE_DEVICES=0,1
+stage2_path=${1:-"/home/jnie002/vlm/ETBench/Modified/pre-trained_model/ETChat-Phi3-Mini-Stage-3"}
+stage3_path="/home/jnie002/vlm/ETBench/Modified/save_model/etchat-stage-3-check"
+
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 export PYTHONPATH="./:$PYTHONPATH"
 
-torchrun --nproc_per_node 2 etchat/train/train.py \
+torchrun --nproc_per_node 8 etchat/train/train.py \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $stage2_path \
     --language_model phi3 \
@@ -19,8 +26,8 @@ torchrun --nproc_per_node 2 etchat/train/train.py \
     --vision_output_layer -2 \
     --vision_output_token patch \
     --mm_projector qformer \
-    --anno_path /home/han023/project/ETBench/Modified/huggingface/PolyU-ChenLab/ET-Instruct-164K/et_instruct_164k_vid.json \
-    --video_path /home/han023/project/ETBench/Modified/huggingface/PolyU-ChenLab/ET-Instruct-164K/videos \
+    --anno_path /home/Dataset/DatasetJiahao/ETBench/ET-Instruct-164K/et_instruct_164k_vid.json \
+    --video_path /home/Dataset/DatasetJiahao/ETBench/ET-Instruct-164K/videos \
     --fps 1 \
     --lora_enable True \
     --lora_lr 5e-5 \
@@ -34,7 +41,7 @@ torchrun --nproc_per_node 2 etchat/train/train.py \
     --max_num_words 200 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 4 \
     --output_dir $stage3_path \
     --save_full_model True \
     --save_strategy steps \
