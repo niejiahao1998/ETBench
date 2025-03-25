@@ -282,20 +282,20 @@ class MultimodalDataset(Dataset):
         raw_annos = nncore.load(data_args.anno_path)
 
         annos = []
-        # idx = 0
+        idx = 0
         for anno in raw_annos:
-            # if idx < 100:
-            num_words = len(anno['conversations'][1]['value'].split(' '))
-            if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
-                continue
-            if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
-                continue
-            if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
-                continue
-            if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
-                continue
-            annos.append(anno)
-                # idx = idx + 1
+            if idx < 100:
+                num_words = len(anno['conversations'][1]['value'].split(' '))
+                if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
+                    continue
+                if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
+                    continue
+                if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
+                    continue
+                if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
+                    continue
+                annos.append(anno)
+                idx = idx + 1
 
         if training_args.local_rank in (0, -1):
             ratio = round(len(annos) / len(raw_annos) * 100, 2)
@@ -406,6 +406,9 @@ def train():
     config_cls, model_cls = ETCHAT_MODELS[model_args.language_model]
 
     dtype = torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
+
+    dtype = torch.bfloat16
+    # print(dtype)
 
     config = config_cls.from_pretrained(model_args.model_name_or_path, torch_dtype=dtype)
     config.update(model_args.__dict__)

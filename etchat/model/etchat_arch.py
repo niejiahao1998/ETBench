@@ -409,7 +409,7 @@ class ETChatMetaForCausalLM:
                 shallow_hidden_states.append(outputs.hidden_states[i])
             shallow_hidden_states = torch.stack(shallow_hidden_states, dim=0)
             shallow_hidden_states = torch.sum( shallow_hidden_states, dim=0) / 16
-            print("shape of shallow_hidden_states:", shallow_hidden_states.shape)
+            # print("shape of shallow_hidden_states:", shallow_hidden_states.shape)
 
             ### layer 16-32
             deep_hidden_states = []

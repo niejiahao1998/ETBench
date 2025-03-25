@@ -5,11 +5,11 @@
 # anno_path
 # video_path
 
-export NCCL_P2P_DISABLE=1
+# export NCCL_P2P_DISABLE=1
 
 set -e
 
-stage2_path=${1:-"/home/jnie002/vlm/ETBench/Modified/pre-trained_model/ETChat-Phi3-Mini-Stage-2"}
+stage2_path=${1:-"/home/jnie002/vlm/ETBench/Modified/pre-trained_model/ETChat-Phi3-Mini-Stage-3"}
 stage3_path="/home/jnie002/vlm/ETBench/Modified/save_model/etchat-stage-3-check"
 
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
