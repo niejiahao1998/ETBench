@@ -7,7 +7,7 @@ set -e
 stage2_path=${1:-"/home/jnie002/vlm/ETBench/Modified/pre-trained_model/ETChat-Phi3-Mini-Stage-3"}
 stage3_path="/home/jnie002/vlm/ETBench/Modified/save_model/etchat-stage-3-check"
 
-export CUDA_VISIBLE_DEVICES=1,8
+export CUDA_VISIBLE_DEVICES=6,7
 export PYTHONPATH="./:$PYTHONPATH"
 
 torchrun --nproc_per_node 2 etchat/train/train.py \
@@ -36,7 +36,7 @@ torchrun --nproc_per_node 2 etchat/train/train.py \
     --max_num_words 200 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 4 \
     --output_dir $stage3_path \
     --save_full_model True \
     --save_strategy steps \

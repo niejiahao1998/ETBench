@@ -284,7 +284,7 @@ class MultimodalDataset(Dataset):
         annos = []
         # idx = 0
         for anno in raw_annos:
-            # if idx < 100:
+            # if idx < 4000:
             num_words = len(anno['conversations'][1]['value'].split(' '))
             if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
                 continue
@@ -407,7 +407,7 @@ def train():
 
     dtype = torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32)
 
-    dtype = torch.bfloat16
+    # dtype = torch.bfloat16
     # print(dtype)
 
     config = config_cls.from_pretrained(model_args.model_name_or_path, torch_dtype=dtype)

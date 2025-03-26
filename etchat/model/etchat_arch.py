@@ -23,6 +23,9 @@ def _cache_state(module, args):
     # print(args[0].shape)
     module.cache_state = args[0]
 
+def print_hook(grad):
+    print("grad norm:", grad.norm())
+
 
 class ETChatMetaModel:
 
@@ -404,30 +407,56 @@ class ETChatMetaForCausalLM:
         if self.config.use_matching and image is not None:
             # decoder block -> -2 -> decoder block -> cache state -> norm -> -1
             ### layer 1-16
-            shallow_hidden_states = []
-            for i in range(1,17):
-                shallow_hidden_states.append(outputs.hidden_states[i])
-            shallow_hidden_states = torch.stack(shallow_hidden_states, dim=0)
-            shallow_hidden_states = torch.sum( shallow_hidden_states, dim=0) / 16
+            # shallow_hidden_states = []
+            # for i in range(1,17):
+            #     shallow_hidden_states.append(outputs.hidden_states[i])
+            # shallow_hidden_states = torch.stack(shallow_hidden_states, dim=0)
+            # shallow_hidden_states = torch.sum(shallow_hidden_states, dim=0) / 16
+
+            # shallow_hidden_states = shallow_hidden_states.detach()
+            # print("shallow_hidden_states.requires_grad:", shallow_hidden_states.requires_grad)
+            # print("shallow_hidden_states.grad:", shallow_hidden_states.grad)
+
+            # outputs.hidden_states[1].retain_grad()
+            # print("outputs.hidden_states[1].requires_grad:", outputs.hidden_states[1].requires_grad)
+            # print("outputs.hidden_states[1].grad:", outputs.hidden_states[1].grad)
+            # outputs.hidden_states[1].register_hook(print_hook)
             # print("shape of shallow_hidden_states:", shallow_hidden_states.shape)
 
             ### layer 16-32
-            deep_hidden_states = []
+            # deep_hidden_states = []
             ### layer 16-31
-            for i in range(17, 32):
-                deep_hidden_states.append(outputs.hidden_states[i])
-            deep_hidden_states.append(self.model.norm.cache_state)
+            # for i in range(17, 32):
+            #     deep_hidden_states.append(outputs.hidden_states[i])
+            # deep_hidden_states.append(self.model.norm.cache_state)
             ### layer 32
-            deep_hidden_states = torch.stack(deep_hidden_states, dim=0)
-            deep_hidden_states = torch.sum( deep_hidden_states, dim=0) / 16
+            # deep_hidden_states = torch.stack(deep_hidden_states, dim=0)
+            # deep_hidden_states = torch.sum( deep_hidden_states, dim=0) / 16
+
+            # deep_hidden_states = deep_hidden_states.detach()
+            # print("deep_hidden_states.requires_grad:", deep_hidden_states.requires_grad)
+            # print("deep_hidden_states.grad:", deep_hidden_states.grad)
+
+            # outputs.hidden_states[30].retain_grad()
+            # print("outputs.hidden_states[30].requires_grad:", outputs.hidden_states[30].requires_grad)
+            # print("outputs.hidden_states[30].grad:", outputs.hidden_states[30].grad)
+            # outputs.hidden_states[30].register_hook(print_hook)
             # print("shape of deep_hidden_states:", deep_hidden_states.shape)
 
-            hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
+            
+
+            # frm_tokens_all = self.frm_head(self.model.norm.cache_state)
+            # print("shape of self.model.norm.cache_state", self.model.norm.cache_state.shape)
+
+            # hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
+            # hier_frm_tokens_all = (outputs.hidden_states[16] + self.model.norm.cache_state) / 2
+            # hier_frm_tokens_all = (deep_hidden_states + self.model.norm.cache_state) / 2
+            hier_frm_tokens_all = ((outputs.hidden_states[4] + outputs.hidden_states[8] + outputs.hidden_states[12] + outputs.hidden_states[16] + outputs.hidden_states[20] + outputs.hidden_states[24] + outputs.hidden_states[28] + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
             # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
-        
             frm_tokens_all = self.frm_head(hier_frm_tokens_all)
             # print("shape of frm_tokens_all:", frm_tokens_all.shape)
-            # print("shape of self.model.norm.cache_state", self.model.norm.cache_state.shape)
+            
+
             vid_tokens_all = self.vid_head(outputs.hidden_states[-2])
             # print("length of outputs.hidden_states:", len(outputs.hidden_states))
             # print("shape of outputs.hidden_states[-2]:", outputs.hidden_states[-2].shape)
@@ -436,6 +465,8 @@ class ETChatMetaForCausalLM:
             # print("outputs.hidden_states[-1]:", outputs.hidden_states[-1])
             # print(self.model.norm(self.model.norm.cache_state) == outputs.hidden_states[-1])
             # print("shape of vid_tokens_all:", vid_tokens_all.shape)
+            # print("vid_tokens_all.requires_grad:", vid_tokens_all.requires_grad)
+            # print("vid_tokens_all.grad:", vid_tokens_all.grad)
 
             if mode != 'training':
                 if mode == 'caching':
@@ -482,6 +513,8 @@ class ETChatMetaForCausalLM:
                     sim = torch.matmul(vid_tokens, frm_tokens.t()) / vid_tokens.size(1)**0.5
                     # print(sim)
                     # print("shape of sim:", sim.shape)
+                    # print("sim.requires_grad:", sim.requires_grad)
+                    # print("sim.grad:", sim.grad)
 
                     loss_match = loss_match + F.cross_entropy(sim, sim_tgt)
                     avg_factor += 1
