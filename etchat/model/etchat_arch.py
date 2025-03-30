@@ -451,7 +451,9 @@ class ETChatMetaForCausalLM:
             # hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
             # hier_frm_tokens_all = (outputs.hidden_states[16] + self.model.norm.cache_state) / 2
             # hier_frm_tokens_all = (deep_hidden_states + self.model.norm.cache_state) / 2
-            hier_frm_tokens_all = ((outputs.hidden_states[4] + outputs.hidden_states[8] + outputs.hidden_states[12] + outputs.hidden_states[16] + outputs.hidden_states[20] + outputs.hidden_states[24] + outputs.hidden_states[28] + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
+            hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
+                                      outputs.hidden_states[16].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[24].detach() + \
+                                        outputs.hidden_states[28].detach() + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
             # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
             frm_tokens_all = self.frm_head(hier_frm_tokens_all)
             # print("shape of frm_tokens_all:", frm_tokens_all.shape)

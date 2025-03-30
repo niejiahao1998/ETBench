@@ -285,16 +285,17 @@ class MultimodalDataset(Dataset):
         # idx = 0
         for anno in raw_annos:
             # if idx < 4000:
-            num_words = len(anno['conversations'][1]['value'].split(' '))
-            if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
-                continue
-            if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
-                continue
-            if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
-                continue
-            if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
-                continue
-            annos.append(anno)
+            if anno["task"] not in ["rar", "eca", "rvq", "tem", "gvq"]:
+                num_words = len(anno['conversations'][1]['value'].split(' '))
+                if data_args.min_num_words >= 0 and num_words < data_args.min_num_words:
+                    continue
+                if data_args.max_num_words >= 0 and num_words > data_args.max_num_words:
+                    continue
+                if data_args.min_video_len >= 0 and 'duration' in anno and anno['duration'] < data_args.min_video_len:
+                    continue
+                if data_args.max_video_len >= 0 and 'duration' in anno and anno['duration'] > data_args.max_video_len:
+                    continue
+                annos.append(anno)
                 # idx = idx + 1
 
         if training_args.local_rank in (0, -1):
