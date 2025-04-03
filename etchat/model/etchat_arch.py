@@ -406,6 +406,24 @@ class ETChatMetaForCausalLM:
 
         if self.config.use_matching and image is not None:
             # decoder block -> -2 -> decoder block -> cache state -> norm -> -1
+            ### every-1-layer
+            # hier_frm_tokens_all = ((outputs.hidden_states[1].detach() + outputs.hidden_states[2].detach() + outputs.hidden_states[3].detach() + outputs.hidden_states[4].detach() + \
+            #     outputs.hidden_states[5].detach() + outputs.hidden_states[6].detach() + outputs.hidden_states[7].detach() + outputs.hidden_states[8].detach() + \
+            #         outputs.hidden_states[9].detach() + outputs.hidden_states[10].detach() + outputs.hidden_states[11].detach() + outputs.hidden_states[12].detach() + \
+            #             outputs.hidden_states[13].detach() + outputs.hidden_states[14].detach() + outputs.hidden_states[15].detach() + outputs.hidden_states[16].detach() + \
+            #                 outputs.hidden_states[17].detach() + outputs.hidden_states[18].detach() + outputs.hidden_states[19].detach() + outputs.hidden_states[20].detach() + \
+            #                     outputs.hidden_states[21].detach() + outputs.hidden_states[22].detach() + outputs.hidden_states[23].detach() + outputs.hidden_states[24].detach() + \
+            #                         outputs.hidden_states[25].detach() + outputs.hidden_states[26].detach() + outputs.hidden_states[27].detach() + outputs.hidden_states[28].detach() + \
+            #                             outputs.hidden_states[29].detach() + outputs.hidden_states[30].detach() + outputs.hidden_states[31].detach() + self.model.norm.cache_state) / 32 + \
+            #                                 self.model.norm.cache_state) / 2
+
+            ### every-2-layer
+            hier_frm_tokens_all = ((outputs.hidden_states[2].detach() + outputs.hidden_states[4].detach() + outputs.hidden_states[6].detach() + outputs.hidden_states[8].detach() + \
+                outputs.hidden_states[10].detach() + outputs.hidden_states[12].detach() + outputs.hidden_states[14].detach() + outputs.hidden_states[16].detach() + \
+                    outputs.hidden_states[18].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[22].detach() + outputs.hidden_states[24].detach() + \
+                        outputs.hidden_states[26].detach() + outputs.hidden_states[28].detach() + outputs.hidden_states[30].detach() + self.model.norm.cache_state) / 32 + \
+                            self.model.norm.cache_state) / 2
+            
             ### layer 1-16
             # shallow_hidden_states = []
             # for i in range(1,17):
@@ -441,9 +459,7 @@ class ETChatMetaForCausalLM:
             # print("outputs.hidden_states[30].requires_grad:", outputs.hidden_states[30].requires_grad)
             # print("outputs.hidden_states[30].grad:", outputs.hidden_states[30].grad)
             # outputs.hidden_states[30].register_hook(print_hook)
-            # print("shape of deep_hidden_states:", deep_hidden_states.shape)
-
-            
+            # print("shape of deep_hidden_states:", deep_hidden_states.shape)           
 
             # frm_tokens_all = self.frm_head(self.model.norm.cache_state)
             # print("shape of self.model.norm.cache_state", self.model.norm.cache_state.shape)
@@ -451,9 +467,12 @@ class ETChatMetaForCausalLM:
             # hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
             # hier_frm_tokens_all = (outputs.hidden_states[16] + self.model.norm.cache_state) / 2
             # hier_frm_tokens_all = (deep_hidden_states + self.model.norm.cache_state) / 2
-            hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
-                                      outputs.hidden_states[16].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[24].detach() + \
-                                        outputs.hidden_states[28].detach() + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
+
+            ### every-4-layer
+            # hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
+            #                           outputs.hidden_states[16].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[24].detach() + \
+            #                             outputs.hidden_states[28].detach() + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
+
             # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
             frm_tokens_all = self.frm_head(hier_frm_tokens_all)
             # print("shape of frm_tokens_all:", frm_tokens_all.shape)
