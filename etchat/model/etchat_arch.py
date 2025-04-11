@@ -524,8 +524,8 @@ class ETChatMetaForCausalLM:
                     sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
                     # print(sim_tgt.tolist())
                     # print("shape of sim_tgt:", sim_tgt.shape)
-                    for sim_tgt_i in sim_tgt.tolist():
-                        indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
+                    # for sim_tgt_i in sim_tgt.tolist():
+                    #     indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
                         # print(indices)
 
                     inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
