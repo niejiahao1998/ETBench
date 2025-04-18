@@ -57,6 +57,8 @@ if __name__ == '__main__':
 
         query, src = sample['q'], sample.get('src')
 
+        task = sample.get('task')
+
         conv = get_conv(model.config.conv_type)
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + '\n' + query)
         conv.append_message(conv.roles[1], None)
@@ -85,7 +87,8 @@ if __name__ == '__main__':
                 stopping_criteria=stopping_criteria,
                 query=[[query]],
                 src=[src],
-                tag=[tag])
+                tag=[tag],
+                task=task)
 
         tokens = out[0, input_ids.size(1):]
         response = detokenize(tokens, model, tokenizer)

@@ -23,9 +23,6 @@ def _cache_state(module, args):
     # print(args[0].shape)
     module.cache_state = args[0]
 
-def print_hook(grad):
-    print("grad norm:", grad.norm())
-
 
 class ETChatMetaModel:
 
@@ -193,7 +190,7 @@ class ETChatMetaForCausalLM:
 
         return img_embeds
 
-    def prepare_multimodal_data(self, input_ids, attention_mask, past_key_values, labels, image, query, src, tag, mode):
+    def prepare_multimodal_data(self, input_ids, attention_mask, past_key_values, labels, image, query, src, tag, mode, task=None):
         if image is None or mode != 'generating':
             self.model.img_token_pos = [[] for _ in range(input_ids.size(0))]
 
@@ -273,11 +270,17 @@ class ETChatMetaForCausalLM:
                     if src is not None and src[batch_idx] is not None:
                         inds = torch.where(cur_input_ids == self.config.match_token_id)[0]
                         if inds.shape[0] > 0:
-                            assert len(src[batch_idx]) == inds.shape[0], (src, inds)
+                            
+                            if task not in ["tvc", "vhd"]:
+                                assert len(src[batch_idx]) == inds.shape[0]*2, (src, inds)
+                            else:
+                                assert len(src[batch_idx]) == inds.shape[0], (src, inds)
                             src_ind = cur_img_state.new_tensor(src[batch_idx]).round().long().detach()
                             max_idx = cur_img_state.shape[0] - 1
                             s = src_ind.clamp(min=0, max=max_idx)
-                            non_img_tokens[inds] = non_img_tokens[inds] + cur_img_state[s]
+                            # non_img_tokens[inds] = non_img_tokens[inds] + cur_img_state[s]
+                            for inds_j in range(inds.shape[0]):
+                                non_img_tokens[inds[inds_j]] = non_img_tokens[inds[inds_j]] + cur_img_state[s[inds_j*2]:s[inds_j*2+1]+1].mean(dim=0)
                     else:
                         assert not (cur_input_ids == self.config.match_token_id).any().item()
 
@@ -353,8 +356,11 @@ class ETChatMetaForCausalLM:
                 src=None,
                 tgt=None,
                 tag=None,
+                task=None,
                 **kwargs):
         assert self.training == (past_key_values is None)
+
+        self.task = task
 
         if self.training:
             mode = 'training'
@@ -376,7 +382,7 @@ class ETChatMetaForCausalLM:
                 src = None
 
         input_ids, attention_mask, inputs_embeds, labels = self.prepare_multimodal_data(
-            input_ids, attention_mask, past_key_values, labels, image, query, src, tag, mode)
+            input_ids, attention_mask, past_key_values, labels, image, query, src, tag, mode, task)
 
         if self.config.use_matching and image is not None and mode == 'generating':
             if input_ids.item() == self.config.match_token_id:
@@ -468,10 +474,24 @@ class ETChatMetaForCausalLM:
             # hier_frm_tokens_all = (outputs.hidden_states[16] + self.model.norm.cache_state) / 2
             # hier_frm_tokens_all = (deep_hidden_states + self.model.norm.cache_state) / 2
 
-            ### every-4-layer
-            hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
-                                      outputs.hidden_states[16].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[24].detach() + \
-                                        outputs.hidden_states[28].detach() + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
+           ### training, every-4-layer
+            if mode == 'training':
+                # print("training mode, every-4-layer")
+                hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
+                                            outputs.hidden_states[16].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[24].detach() + \
+                                                outputs.hidden_states[28].detach() + self.model.norm.cache_state) / 8 + self.model.norm.cache_state) / 2
+            ### inference, every-1-layer
+            else:
+                # print("inference mode, every-1-layer")
+                hier_frm_tokens_all = ((outputs.hidden_states[1] + outputs.hidden_states[2] + outputs.hidden_states[3] + outputs.hidden_states[4] + \
+                                            outputs.hidden_states[5] + outputs.hidden_states[6] + outputs.hidden_states[7] + outputs.hidden_states[8] + \
+                                                outputs.hidden_states[9] + outputs.hidden_states[10] + outputs.hidden_states[11] + outputs.hidden_states[12] + \
+                                                    outputs.hidden_states[13] + outputs.hidden_states[14] + outputs.hidden_states[15] + outputs.hidden_states[16] + \
+                                                        outputs.hidden_states[17] + outputs.hidden_states[18] + outputs.hidden_states[19] + outputs.hidden_states[20] + \
+                                                            outputs.hidden_states[21] + outputs.hidden_states[22] + outputs.hidden_states[23] + outputs.hidden_states[24] + \
+                                                                outputs.hidden_states[25] + outputs.hidden_states[26] + outputs.hidden_states[27] + outputs.hidden_states[28] + \
+                                                                    outputs.hidden_states[29] + outputs.hidden_states[30] + outputs.hidden_states[31] + self.model.norm.cache_state) / 32 + \
+                                                                        self.model.norm.cache_state) / 2
 
             # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
             frm_tokens_all = self.frm_head(hier_frm_tokens_all)
@@ -520,15 +540,44 @@ class ETChatMetaForCausalLM:
 
                     frm_tokens = frm_tokens_all[i, sep[0]:sep[1]]
                     # print("shape of frm_tokens:", frm_tokens.shape)
-                    idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
-                    sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
-                    # print(sim_tgt.tolist())
+                    # idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
+                    # print("idx_vec:", idx_vec)
+                    # sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
+                    # print("sim_tgt:", sim_tgt.tolist())
                     # print("shape of sim_tgt:", sim_tgt.shape)
                     # for sim_tgt_i in sim_tgt.tolist():
                     #     indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
-                        # print(indices)
+                    #     print(indices)
 
-                    inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
+                    if task not in ['tvc','vhd']:
+                        sim_tgt = torch.zeros((int(len(ts)/2), frm_tokens.size(0)), device=frm_tokens.device)
+                        for sim_tgt_idx, sim_tgt_i in enumerate(sim_tgt):
+                            for sim_tgt_i_j in range(int(torch.round(tgt_idx[sim_tgt_idx*2])), int(torch.round(tgt_idx[sim_tgt_idx*2+1]))+1):
+                                sim_tgt_i[sim_tgt_i_j] = 1
+
+                            val = 2
+                            for sim_tgt_i_j in range(int(torch.round(tgt_idx[sim_tgt_idx*2]))-1, -1, -1):
+                                val = val / 2
+                                if val < 0.125:
+                                    sim_tgt_i[sim_tgt_i_j] = 0
+                                else:
+                                    sim_tgt_i[sim_tgt_i_j] = val
+
+                            val = 2
+                            for sim_tgt_i_j in range(int(torch.round(tgt_idx[sim_tgt_idx*2+1])), len(sim_tgt_i)):
+                                val = val / 2
+                                if val < 0.125:
+                                    sim_tgt_i[sim_tgt_i_j] = 0
+                                else:
+                                    sim_tgt_i[sim_tgt_i_j] = val
+
+                    else:
+                        idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
+                        sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
+                    if task not in ['tvc','vhd']:
+                        inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-int(tgt_idx.size(0)/2):]
+                    else:
+                        inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
                     vid_tokens = vid_tokens_all[i][inds]
                     # print("shape of vid_tokens:", vid_tokens.shape)
                     sim = torch.matmul(vid_tokens, frm_tokens.t()) / vid_tokens.size(1)**0.5
@@ -547,7 +596,7 @@ class ETChatMetaForCausalLM:
 
         return outputs
 
-    def prepare_inputs_for_generation(self, *args, image=None, query=None, src=None, tag=None, **kwargs):
+    def prepare_inputs_for_generation(self, *args, image=None, query=None, src=None, tag=None, task=None, **kwargs):
         model_inputs = super(ETChatMetaForCausalLM, self).prepare_inputs_for_generation(*args, **kwargs)
-        model_inputs.update({'image': image, 'query': query, 'src': src, 'tag': tag})
+        model_inputs.update({'image': image, 'query': query, 'src': src, 'tag': tag, 'task': task})
         return model_inputs
