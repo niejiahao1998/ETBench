@@ -271,16 +271,19 @@ class ETChatMetaForCausalLM:
                         inds = torch.where(cur_input_ids == self.config.match_token_id)[0]
                         if inds.shape[0] > 0:
                             
-                            if task not in ["tvc", "vhd"]:
+                            if task not in [['tvc'], ['vhd'], ['rvc']]:
                                 assert len(src[batch_idx]) == inds.shape[0]*2, (src, inds)
                             else:
                                 assert len(src[batch_idx]) == inds.shape[0], (src, inds)
                             src_ind = cur_img_state.new_tensor(src[batch_idx]).round().long().detach()
                             max_idx = cur_img_state.shape[0] - 1
                             s = src_ind.clamp(min=0, max=max_idx)
-                            # non_img_tokens[inds] = non_img_tokens[inds] + cur_img_state[s]
-                            for inds_j in range(inds.shape[0]):
-                                non_img_tokens[inds[inds_j]] = non_img_tokens[inds[inds_j]] + cur_img_state[s[inds_j*2]:s[inds_j*2+1]+1].mean(dim=0)
+
+                            if task not in [['tvc'], ['vhd'], ['rvc']]:
+                                for inds_j in range(inds.shape[0]):
+                                    non_img_tokens[inds[inds_j]] = non_img_tokens[inds[inds_j]] + cur_img_state[s[inds_j*2]:s[inds_j*2+1]+1].mean(dim=0)
+                            else:
+                                non_img_tokens[inds] = non_img_tokens[inds] + cur_img_state[s]
                     else:
                         assert not (cur_input_ids == self.config.match_token_id).any().item()
 
@@ -549,7 +552,7 @@ class ETChatMetaForCausalLM:
                     #     indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
                     #     print(indices)
 
-                    if task not in ['tvc','vhd']:
+                    if task not in [['tvc'], ['vhd']]:
                         sim_tgt = torch.zeros((int(len(ts)/2), frm_tokens.size(0)), device=frm_tokens.device)
                         for sim_tgt_idx, sim_tgt_i in enumerate(sim_tgt):
                             for sim_tgt_i_j in range(int(torch.round(tgt_idx[sim_tgt_idx*2])), int(torch.round(tgt_idx[sim_tgt_idx*2+1]))+1):
@@ -574,7 +577,7 @@ class ETChatMetaForCausalLM:
                     else:
                         idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
                         sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
-                    if task not in ['tvc','vhd']:
+                    if task not in [['tvc'], ['vhd']]:
                         inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-int(tgt_idx.size(0)/2):]
                     else:
                         inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
