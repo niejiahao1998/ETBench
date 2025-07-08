@@ -56,8 +56,7 @@ if __name__ == '__main__':
         video = transform(video).half().to(args.device)
 
         query, src = sample['q'], sample.get('src')
-
-        task = sample.get('task')
+        task = sample.get('task', 'tvg')
 
         conv = get_conv(model.config.conv_type)
         conv.append_message(conv.roles[0], DEFAULT_IMAGE_TOKEN + '\n' + query)

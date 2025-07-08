@@ -20,7 +20,6 @@ def _get_w(weight, key):
 
 def _cache_state(module, args):
     assert isinstance(args, tuple) and len(args) == 1, args
-    # print(args[0].shape)
     module.cache_state = args[0]
 
 
@@ -262,7 +261,6 @@ class ETChatMetaForCausalLM:
 
                 img_token_inds = torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0]
                 img_idx += 1
-
             if cur_input_ids.numel() > 0:
                 non_img_tokens = self.model.embed_tokens(cur_input_ids)
 
@@ -270,15 +268,13 @@ class ETChatMetaForCausalLM:
                     if src is not None and src[batch_idx] is not None:
                         inds = torch.where(cur_input_ids == self.config.match_token_id)[0]
                         if inds.shape[0] > 0:
-                            
                             if task not in [['tvc'], ['vhd'], ['rvc']]:
-                                assert len(src[batch_idx]) == inds.shape[0]*2, (src, inds)
+                                assert len(src[batch_idx]) == inds.shape[0]*2, (src, inds, task)
                             else:
-                                assert len(src[batch_idx]) == inds.shape[0], (src, inds)
+                                assert len(src[batch_idx]) == inds.shape[0], (src, inds, task)                 
                             src_ind = cur_img_state.new_tensor(src[batch_idx]).round().long().detach()
                             max_idx = cur_img_state.shape[0] - 1
                             s = src_ind.clamp(min=0, max=max_idx)
-
                             if task not in [['tvc'], ['vhd'], ['rvc']]:
                                 for inds_j in range(inds.shape[0]):
                                     non_img_tokens[inds[inds_j]] = non_img_tokens[inds[inds_j]] + cur_img_state[s[inds_j*2]:s[inds_j*2+1]+1].mean(dim=0)
@@ -362,7 +358,6 @@ class ETChatMetaForCausalLM:
                 task=None,
                 **kwargs):
         assert self.training == (past_key_values is None)
-
         self.task = task
 
         if self.training:
@@ -414,70 +409,8 @@ class ETChatMetaForCausalLM:
             **kwargs)
 
         if self.config.use_matching and image is not None:
-            # decoder block -> -2 -> decoder block -> cache state -> norm -> -1
-            ### every-1-layer
-            # hier_frm_tokens_all = ((outputs.hidden_states[1].detach() + outputs.hidden_states[2].detach() + outputs.hidden_states[3].detach() + outputs.hidden_states[4].detach() + \
-            #     outputs.hidden_states[5].detach() + outputs.hidden_states[6].detach() + outputs.hidden_states[7].detach() + outputs.hidden_states[8].detach() + \
-            #         outputs.hidden_states[9].detach() + outputs.hidden_states[10].detach() + outputs.hidden_states[11].detach() + outputs.hidden_states[12].detach() + \
-            #             outputs.hidden_states[13].detach() + outputs.hidden_states[14].detach() + outputs.hidden_states[15].detach() + outputs.hidden_states[16].detach() + \
-            #                 outputs.hidden_states[17].detach() + outputs.hidden_states[18].detach() + outputs.hidden_states[19].detach() + outputs.hidden_states[20].detach() + \
-            #                     outputs.hidden_states[21].detach() + outputs.hidden_states[22].detach() + outputs.hidden_states[23].detach() + outputs.hidden_states[24].detach() + \
-            #                         outputs.hidden_states[25].detach() + outputs.hidden_states[26].detach() + outputs.hidden_states[27].detach() + outputs.hidden_states[28].detach() + \
-            #                             outputs.hidden_states[29].detach() + outputs.hidden_states[30].detach() + outputs.hidden_states[31].detach() + self.model.norm.cache_state) / 32 + \
-            #                                 self.model.norm.cache_state) / 2
 
-            ### every-2-layer
-            # hier_frm_tokens_all = ((outputs.hidden_states[2].detach() + outputs.hidden_states[4].detach() + outputs.hidden_states[6].detach() + outputs.hidden_states[8].detach() + \
-            #     outputs.hidden_states[10].detach() + outputs.hidden_states[12].detach() + outputs.hidden_states[14].detach() + outputs.hidden_states[16].detach() + \
-            #         outputs.hidden_states[18].detach() + outputs.hidden_states[20].detach() + outputs.hidden_states[22].detach() + outputs.hidden_states[24].detach() + \
-            #             outputs.hidden_states[26].detach() + outputs.hidden_states[28].detach() + outputs.hidden_states[30].detach() + self.model.norm.cache_state) / 32 + \
-            #                 self.model.norm.cache_state) / 2
-            
-            ### layer 1-16
-            # shallow_hidden_states = []
-            # for i in range(1,17):
-            #     shallow_hidden_states.append(outputs.hidden_states[i])
-            # shallow_hidden_states = torch.stack(shallow_hidden_states, dim=0)
-            # shallow_hidden_states = torch.sum(shallow_hidden_states, dim=0) / 16
-
-            # shallow_hidden_states = shallow_hidden_states.detach()
-            # print("shallow_hidden_states.requires_grad:", shallow_hidden_states.requires_grad)
-            # print("shallow_hidden_states.grad:", shallow_hidden_states.grad)
-
-            # outputs.hidden_states[1].retain_grad()
-            # print("outputs.hidden_states[1].requires_grad:", outputs.hidden_states[1].requires_grad)
-            # print("outputs.hidden_states[1].grad:", outputs.hidden_states[1].grad)
-            # outputs.hidden_states[1].register_hook(print_hook)
-            # print("shape of shallow_hidden_states:", shallow_hidden_states.shape)
-
-            ### layer 16-32
-            # deep_hidden_states = []
-            ### layer 16-31
-            # for i in range(17, 32):
-            #     deep_hidden_states.append(outputs.hidden_states[i])
-            # deep_hidden_states.append(self.model.norm.cache_state)
-            ### layer 32
-            # deep_hidden_states = torch.stack(deep_hidden_states, dim=0)
-            # deep_hidden_states = torch.sum( deep_hidden_states, dim=0) / 16
-
-            # deep_hidden_states = deep_hidden_states.detach()
-            # print("deep_hidden_states.requires_grad:", deep_hidden_states.requires_grad)
-            # print("deep_hidden_states.grad:", deep_hidden_states.grad)
-
-            # outputs.hidden_states[30].retain_grad()
-            # print("outputs.hidden_states[30].requires_grad:", outputs.hidden_states[30].requires_grad)
-            # print("outputs.hidden_states[30].grad:", outputs.hidden_states[30].grad)
-            # outputs.hidden_states[30].register_hook(print_hook)
-            # print("shape of deep_hidden_states:", deep_hidden_states.shape)           
-
-            # frm_tokens_all = self.frm_head(self.model.norm.cache_state)
-            # print("shape of self.model.norm.cache_state", self.model.norm.cache_state.shape)
-
-            # hier_frm_tokens_all = (shallow_hidden_states + deep_hidden_states + self.model.norm.cache_state) / 3
-            # hier_frm_tokens_all = (outputs.hidden_states[16] + self.model.norm.cache_state) / 2
-            # hier_frm_tokens_all = (deep_hidden_states + self.model.norm.cache_state) / 2
-
-           ### training, every-4-layer
+            ### training, every-4-layer
             if mode == 'training':
                 # print("training mode, every-4-layer")
                 hier_frm_tokens_all = ((outputs.hidden_states[4].detach() + outputs.hidden_states[8].detach() + outputs.hidden_states[12].detach() + \
@@ -496,21 +429,9 @@ class ETChatMetaForCausalLM:
                                                                     outputs.hidden_states[29] + outputs.hidden_states[30] + outputs.hidden_states[31] + self.model.norm.cache_state) / 32 + \
                                                                         self.model.norm.cache_state) / 2
 
-            # print("shape of hier_frm_tokens_all:", hier_frm_tokens_all.shape)
             frm_tokens_all = self.frm_head(hier_frm_tokens_all)
-            # print("shape of frm_tokens_all:", frm_tokens_all.shape)
-            
 
             vid_tokens_all = self.vid_head(outputs.hidden_states[-2])
-            # print("length of outputs.hidden_states:", len(outputs.hidden_states))
-            # print("shape of outputs.hidden_states[-2]:", outputs.hidden_states[-2].shape)
-            # print(self.model.norm.cache_state == outputs.hidden_states[-1])
-            # print("self.norm.cache_state:", self.frm_post_layernorm(self.model.norm.cache_state))
-            # print("outputs.hidden_states[-1]:", outputs.hidden_states[-1])
-            # print(self.model.norm(self.model.norm.cache_state) == outputs.hidden_states[-1])
-            # print("shape of vid_tokens_all:", vid_tokens_all.shape)
-            # print("vid_tokens_all.requires_grad:", vid_tokens_all.requires_grad)
-            # print("vid_tokens_all.grad:", vid_tokens_all.grad)
 
             if mode != 'training':
                 if mode == 'caching':
@@ -524,10 +445,9 @@ class ETChatMetaForCausalLM:
                 tgt = sim.argmax().item()
                 self.sim.append(sim)
                 self.tgt.append(tgt)
+                self.sim.append(sim)
 
             if labels is not None and tgt is not None:
-                # print("tgt:", tgt)
-                # print("shape of tgt:", len(tgt[0]))
                 loss_match, avg_factor = 0, 0
                 shift_labels = labels[..., 1:].contiguous()
                 assert len(self.model.img_token_pos) == len(tgt)
@@ -542,17 +462,7 @@ class ETChatMetaForCausalLM:
                     tgt_idx[tgt_idx > max_idx] = max_idx
 
                     frm_tokens = frm_tokens_all[i, sep[0]:sep[1]]
-                    # print("shape of frm_tokens:", frm_tokens.shape)
-                    # idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
-                    # print("idx_vec:", idx_vec)
-                    # sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
-                    # print("sim_tgt:", sim_tgt.tolist())
-                    # print("shape of sim_tgt:", sim_tgt.shape)
-                    # for sim_tgt_i in sim_tgt.tolist():
-                    #     indices = [i for i, val in enumerate(sim_tgt_i) if val == 1]
-                    #     print(indices)
-
-                    if task not in [['tvc'], ['vhd']]:
+                    if task not in [['tvc'], ['vhd'], 'tvc', 'vhd']:
                         sim_tgt = torch.zeros((int(len(ts)/2), frm_tokens.size(0)), device=frm_tokens.device)
                         for sim_tgt_idx, sim_tgt_i in enumerate(sim_tgt):
                             for sim_tgt_i_j in range(int(torch.round(tgt_idx[sim_tgt_idx*2])), int(torch.round(tgt_idx[sim_tgt_idx*2+1]))+1):
@@ -573,7 +483,7 @@ class ETChatMetaForCausalLM:
                                     sim_tgt_i[sim_tgt_i_j] = 0
                                 else:
                                     sim_tgt_i[sim_tgt_i_j] = val
-
+                                                   
                     else:
                         idx_vec = torch.arange(frm_tokens.size(0), device=frm_tokens.device)[None].repeat(len(ts), 1)
                         sim_tgt = torch.pow(self.config.alpha, -(idx_vec - tgt_idx[:, None]).abs())
@@ -582,13 +492,7 @@ class ETChatMetaForCausalLM:
                     else:
                         inds = torch.where(shift_labels[i] == self.config.match_token_id)[0][-tgt_idx.size(0):]
                     vid_tokens = vid_tokens_all[i][inds]
-                    # print("shape of vid_tokens:", vid_tokens.shape)
                     sim = torch.matmul(vid_tokens, frm_tokens.t()) / vid_tokens.size(1)**0.5
-                    # print(sim)
-                    # print("shape of sim:", sim.shape)
-                    # print("sim.requires_grad:", sim.requires_grad)
-                    # print("sim.grad:", sim.grad)
-
                     loss_match = loss_match + F.cross_entropy(sim, sim_tgt)
                     avg_factor += 1
 
